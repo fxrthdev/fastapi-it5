@@ -1,56 +1,74 @@
-"""Create the FastAPI app and connect its route modules."""
+"""Create the FastAPI app and connect route modules."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from app.database import database_connection, initialize_database
-from app.models import Student, StudentInput
+from app.models import ExpenseInput, UserInput
 
-app = FastAPI(title="Beginner Student API")
+app = FastAPI(
+    title="Personal Expense & Budget Information System",
+    description="Manages users, budgets, and logs expense transactions with pure SQLite.",
+)
 
 
 @app.get("/")
 def home():
-    return {"message": "Welcome! Visit /docs to try the API."}
+    return {
+        "system": "Expense Tracker & Budget Management System",
+        "docs": "Visit /docs to test the API.",
+    }
 
 
-@app.get("/students")
-def get_students():
-    result = Student.list_students(database_connection=database_connection)
-    return {"students": result}
+# --- User Endpoints ---
 
-
-@app.get("/students/{student_id}")
-def get_student(student_id: int):
-    result = Student.get_student(
-        student_id=student_id, database_connection=database_connection
+@app.post("/users", status_code=201)
+def create_user(user: UserInput):
+    result = UserInput.create_user(
+        user_input=user, database_connection=database_connection
     )
-    return {"student": result}
+    return {"user": dict(result)}
 
 
-@app.post("/student")
-def create_student(student: StudentInput):
-    result = Student.create_student(
-        student_input=student, database_connection=database_connection
+@app.get("/users/{user_id}/budget-summary")
+def get_user_budget_summary(user_id: int):
+    """Transactional Endpoint: Calculates budget usage and status."""
+    summary = UserInput.get_user_summary(
+        user_id=user_id, database_connection=database_connection
     )
-    return {"student": result}
+    if not summary:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"summary": summary}
 
 
-@app.put("/student/{student_id}")
-def edit_student(student_id: int, student: Student):
-    result = Student.update_student(
-        student_id=student_id,
-        student_input=student,
-        database_connection=database_connection,
+# --- Expense Endpoints ---
+
+@app.post("/expenses", status_code=201)
+def record_expense(expense: ExpenseInput):
+    """Transactionally logs an expense associated with a user."""
+    result = ExpenseInput.record_expense_transaction(
+        expense_input=expense, database_connection=database_connection
     )
-    return {"student": result}
+    if not result:
+        raise HTTPException(
+            status_code=404, detail="User ID does not exist. Cannot record expense."
+        )
+    return {"expense": dict(result)}
 
 
-@app.delete("/student/{student_id}")
-def delete_student(student_id: int):
-    Student.delete_student(
-        student_id=student_id, database_connection=database_connection
+@app.get("/users/{user_id}/expenses")
+def list_user_expenses(user_id: int):
+    results = ExpenseInput.list_expenses_by_user(
+        user_id=user_id, database_connection=database_connection
     )
-    return {"message": "Student deleted successfully"}
+    return {"expenses": [dict(r) for r in results]}
+
+
+@app.delete("/expenses/{expense_id}")
+def delete_expense(expense_id: int):
+    ExpenseInput.delete_expense(
+        expense_id=expense_id, database_connection=database_connection
+    )
+    return {"message": "Expense deleted successfully"}
 
 
 initialize_database()
